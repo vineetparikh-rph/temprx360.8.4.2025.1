@@ -1,0 +1,185 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  hashedPassword String?
+  role          String    @default("technician") // "admin", "pharmacist", "technician"
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime  @default(now())
+  
+  // Many-to-many relationship with pharmacies
+  userPharmacies UserPharmacy[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Junction table for users and pharmacies (many-to-many)
+model UserPharmacy {
+  id         String   @id @default(cuid())
+  userId     String
+  pharmacyId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, pharmacyId])
+}
+
+// Pharmacy Models
+model Pharmacy {
+  id            String    @id @default(cuid())
+  name          String
+  code          String    @unique // "family", "specialty", "parlin", "outpatient"
+  licenseNumber String?
+  address       String?
+  phone         String?
+  sensors       Sensor[]
+  alerts        Alert[]
+  policies      TemperaturePolicy[]
+  createdAt     DateTime  @default(now())
+  
+  // Many-to-many relationship with users
+  userPharmacies UserPharmacy[]
+  
+  // NEW: Sensor assignments
+  sensorAssignments SensorAssignment[]
+}
+
+// NEW: SensorAssignment Model - replaces hardcoded mapping
+model SensorAssignment {
+  id            String   @id @default(cuid())
+  sensorPushId  String   // SensorPush device ID
+  sensorName    String   // SensorPush device name
+  pharmacyId    String
+  pharmacy      Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  locationType  String   @default("other") // "refrigerator", "freezer", "storage", "other"
+  isActive      Boolean  @default(true)
+  assignedBy    String?  // User ID who made the assignment
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([sensorPushId, pharmacyId]) // Prevent duplicate assignments
+}
+
+model Sensor {
+  id           String    @id @default(cuid())
+  sensorPushId String?   @unique
+  name         String
+  location     String    // "refrigerator", "freezer", "storage"
+  pharmacyId   String
+  pharmacy     Pharmacy  @relation(fields: [pharmacyId], references: [id])
+  readings     Reading[]
+  alerts       Alert[]
+  minTemp      Float     @default(36.0)  // 2°C in Fahrenheit
+  maxTemp      Float     @default(46.4)  // 8°C in Fahrenheit
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+}
+
+model Reading {
+  id          String   @id @default(cuid())
+  sensorId    String
+  sensor      Sensor   @relation(fields: [sensorId], references: [id])
+  temperature Float
+  humidity    Float?
+  timestamp   DateTime @default(now())
+  
+  // Add retention policy - readings stored indefinitely
+  archived    Boolean  @default(false)
+  archivedAt  DateTime?
+}
+
+model Alert {
+  id         String   @id @default(cuid())
+  sensorId   String
+  sensor     Sensor   @relation(fields: [sensorId], references: [id])
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id])
+  type       String   // "temperature_high", "temperature_low", "humidity", "offline", "battery_low"
+  severity   String   // "low", "medium", "high", "critical"
+  message    String
+  currentValue Float?  // Current temperature/humidity value
+  thresholdValue Float? // The threshold that was exceeded
+  location    String?  // "refrigerator", "freezer", "storage"
+  resolved   Boolean  @default(false)
+  resolvedAt DateTime?
+  resolvedBy String?  // User ID who resolved the alert
+  resolvedNote String? // Note when resolving alert
+  notificationSent Boolean @default(false)
+  emailSent   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  resource  String
+  timestamp DateTime @default(now())
+  metadata  String?  // JSON as string for SQLite
+}
+
+// Temperature Policy Management
+model TemperaturePolicy {
+  id          String   @id @default(cuid())
+  pharmacyId  String
+  pharmacy    Pharmacy @relation(fields: [pharmacyId], references: [id])
+  title       String
+  content     String   // Policy content
+  version     String   @default("1.0")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
