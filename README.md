@@ -99,11 +99,6 @@ A comprehensive pharmacy management system built with Next.js, featuring real-ti
 6. **Open your browser**
    Navigate to [http://localhost:3000](http://localhost:3000)
 
-## 🔑 **Default Login**
-
-- **Email:** admin@georgies.com
-- **Password:** admin123
-
 ## 📁 **Project Structure**
 
 ```
@@ -191,10 +186,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support and questions:
 - Create an issue on GitHub
-- Email: support@georgiespharmacy.com
+- Email: admin@georgiesrx.com
 
 ## 🏆 **Acknowledgments**
-
+- Built by Vineet Parikh, PharmD
 - Built for Georgies Pharmacy operations
 - SensorPush API integration
 - Next.js and React community
