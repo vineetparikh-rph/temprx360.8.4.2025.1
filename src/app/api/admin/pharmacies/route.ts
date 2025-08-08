@@ -1,4 +1,4 @@
-// src/app/api/admin/pharmacies/route.ts - Updated
+// src/app/api/admin/pharmacies/route.ts - Fixed
 import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -19,7 +19,7 @@ export async function GET() {
         _count: {
           select: {
             userPharmacies: true,
-            sensorAssignments: true
+            gateways: true
           }
         }
       }
@@ -72,35 +72,13 @@ export async function POST(request: Request) {
       data: {
         name: data.name,
         code: data.code,
-        address: data.address || null,
-        city: data.city || null,
-        state: data.state || null,
-        zipCode: data.zipCode || null,
-        phone: data.phone || null,
-        fax: data.fax || null,
         email: data.email || null,
-        npi: data.npi || null,
-        ncpdp: data.ncpdp || null,
-        dea: data.dea || null,
+        faxNumber: data.faxNumber || null,
         licenseNumber: data.licenseNumber || null,
-        pharmacistInCharge: data.pharmacistInCharge || null,
-        picLicense: data.picLicense || null,
-        picPhone: data.picPhone || null,
-        picEmail: data.picEmail || null,
-        isActive: true
-      }
-    });
-
-    // Log the creation
-    await prisma.auditLog.create({
-      data: {
-        userId: session.user.id,
-        action: 'CREATE_PHARMACY',
-        resource: `pharmacy:${pharmacy.id}`,
-        metadata: JSON.stringify({
-          pharmacyName: pharmacy.name,
-          pharmacyCode: pharmacy.code
-        })
+        deaNumber: data.deaNumber || null,
+        npiNumber: data.npiNumber || null,
+        ncpdpNumber: data.ncpdpNumber || null,
+        ownerName: data.ownerName || null
       }
     });
 
@@ -144,19 +122,6 @@ export async function PUT(request: Request) {
       }
     });
 
-    // Log the update
-    await prisma.auditLog.create({
-      data: {
-        userId: session.user.id,
-        action: 'UPDATE_PHARMACY',
-        resource: `pharmacy:${pharmacy.id}`,
-        metadata: JSON.stringify({
-          pharmacyName: pharmacy.name,
-          updatedFields: Object.keys(updateData)
-        })
-      }
-    });
-
     return NextResponse.json({
       pharmacy,
       message: `Pharmacy "${pharmacy.name}" updated successfully`
@@ -191,12 +156,12 @@ export async function DELETE(request: Request) {
 
     // Check if pharmacy has dependencies
     const pharmacy = await prisma.pharmacy.findUnique({
-      where: { id },
+      where: { id: parseInt(id) },
       include: {
         _count: {
           select: {
             userPharmacies: true,
-            sensorAssignments: true
+            gateways: true
           }
         }
       }
@@ -206,27 +171,14 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 });
     }
 
-    if (pharmacy._count.userPharmacies > 0 || pharmacy._count.sensorAssignments > 0) {
+    if (pharmacy._count.userPharmacies > 0 || pharmacy._count.gateways > 0) {
       return NextResponse.json({ 
-        error: 'Cannot delete pharmacy with existing users or sensor assignments' 
+        error: 'Cannot delete pharmacy with existing users or gateways' 
       }, { status: 400 });
     }
 
     await prisma.pharmacy.delete({
-      where: { id }
-    });
-
-    // Log the deletion
-    await prisma.auditLog.create({
-      data: {
-        userId: session.user.id,
-        action: 'DELETE_PHARMACY',
-        resource: `pharmacy:${id}`,
-        metadata: JSON.stringify({
-          pharmacyName: pharmacy.name,
-          pharmacyCode: pharmacy.code
-        })
-      }
+      where: { id: parseInt(id) }
     });
 
     return NextResponse.json({

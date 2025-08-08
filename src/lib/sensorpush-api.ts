@@ -4,6 +4,11 @@ class SensorPushAPI {
   private tokenExpiry: Date | null = null;
   private baseURL = 'https://api.sensorpush.com/api/v1';
 
+  constructor(
+    private email: string,
+    private password: string
+  ) {}
+
   async authenticate() {
     if (this.accessToken && this.tokenExpiry && this.tokenExpiry > new Date()) {
       return this.accessToken;
@@ -15,8 +20,8 @@ class SensorPushAPI {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: process.env.SENSORPUSH_EMAIL,
-          password: process.env.SENSORPUSH_PASSWORD
+          email: this.email,
+          password: this.password
         })
       });
 
@@ -72,42 +77,6 @@ class SensorPushAPI {
     }
   }
 
-  async getSensorData(sensorIds: string[], startTime?: Date, endTime?: Date) {
-    const token = await this.authenticate();
-
-    try {
-      const payload: any = {
-        sensors: sensorIds,
-        limit: 100
-      };
-
-      if (startTime) {
-        payload.startTime = startTime.toISOString();
-      }
-      if (endTime) {
-        payload.endTime = endTime.toISOString();
-      }
-
-      const response = await fetch(`${this.baseURL}/samples`, {
-        method: 'POST',
-        headers: {
-          'Authorization': token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch sensor data');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to fetch sensor data:', error);
-      throw error;
-    }
-  }
-
   async getGateways() {
     const token = await this.authenticate();
 
@@ -133,4 +102,4 @@ class SensorPushAPI {
   }
 }
 
-export const sensorPushAPI = new SensorPushAPI();
+export default SensorPushAPI;
