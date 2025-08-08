@@ -21,13 +21,33 @@ export async function GET() {
             userPharmacies: true,
             gateways: true
           }
+        },
+        gateways: {
+          include: {
+            _count: {
+              select: {
+                sensors: true
+              }
+            }
+          }
         }
       }
     });
 
+    // Transform data to include total sensor count per pharmacy
+    const pharmaciesWithCounts = pharmacies.map(pharmacy => ({
+      ...pharmacy,
+      _count: {
+        ...pharmacy._count,
+        sensors: pharmacy.gateways.reduce((total, gateway) => total + gateway._count.sensors, 0)
+      },
+      // Remove the detailed gateways from the response to keep it clean
+      gateways: undefined
+    }));
+
     return NextResponse.json({
-      pharmacies,
-      totalCount: pharmacies.length
+      pharmacies: pharmaciesWithCounts,
+      totalCount: pharmaciesWithCounts.length
     });
 
   } catch (error) {

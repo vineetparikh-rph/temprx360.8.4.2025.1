@@ -13,53 +13,63 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Get counts from database
+    // Get counts from database using your actual schema
     const [
       totalPharmacies,
       totalUsers,
-      totalSensorAssignments,
-      activeAlerts,
-      recentReadings
+      totalGateways,
+      totalSensors,
+      connectedGateways
     ] = await Promise.all([
       prisma.pharmacy.count(),
       prisma.user.count(),
-      prisma.sensorAssignment.count({ where: { isActive: true } }),
-      prisma.alert.count({ where: { isResolved: false } }),
-      prisma.reading.count({
+      prisma.gateway.count(),
+      prisma.sensor.count(),
+      prisma.gateway.count({
         where: {
-          timestamp: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+          lastSeen: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Connected in last 24 hours
           }
         }
       })
     ]);
 
-    // Calculate system health based on recent activity
+    // Calculate system health based on gateway connectivity
     let systemHealth = 'Good';
-    if (activeAlerts > 10) {
+    const connectivityRatio = totalGateways > 0 ? connectedGateways / totalGateways : 0;
+    
+    if (connectivityRatio < 0.5) {
       systemHealth = 'Critical';
-    } else if (activeAlerts > 5) {
+    } else if (connectivityRatio < 0.8) {
       systemHealth = 'Warning';
-    } else if (recentReadings === 0) {
+    } else if (totalSensors === 0) {
       systemHealth = 'No Data';
     }
 
-    // For now, we'll use sensor assignments as a proxy for total sensors
-    // In a real implementation, this would come from SensorPush API
-    const totalSensors = totalSensorAssignments;
-    
-    // Estimate hubs (typically 1 hub per 10-15 sensors)
-    const totalHubs = Math.max(1, Math.ceil(totalSensors / 12));
+    // For compatibility with your dashboard, use gateways as "hubs"
+    const totalHubs = totalGateways;
+    const connectedHubs = connectedGateways;
 
     return NextResponse.json({
       totalHubs,
       totalSensors,
       totalPharmacies,
       totalUsers,
-      activeAlerts,
+      connectedHubs,
       systemHealth,
-      recentReadings,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      // Additional stats for detailed views
+      stats: {
+        gateways: {
+          total: totalGateways,
+          connected: connectedGateways,
+          offline: totalGateways - connectedGateways
+        },
+        sensors: {
+          total: totalSensors,
+          // Could add sensor-specific stats here
+        }
+      }
     });
 
   } catch (error) {

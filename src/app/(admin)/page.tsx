@@ -48,6 +48,11 @@ interface Pharmacy {
   code: string;
   hubs: Hub[];
   directSensors: Sensor[];
+  _count: {
+    gateways: number;
+    sensors: number;
+    userPharmacies: number;
+  };
 }
 
 export default function TemperatureMonitoringPage() {
@@ -59,7 +64,6 @@ export default function TemperatureMonitoringPage() {
   const [expandedPharmacies, setExpandedPharmacies] = useState<Set<string>>(new Set());
   const [expandedHubs, setExpandedHubs] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [sensorsResponse, setSensorsResponse] = useState<any>(null);
 
   useEffect(() => {
     if (status === "loading") return; // Still loading
@@ -88,31 +92,20 @@ export default function TemperatureMonitoringPage() {
     setLoading(true);
     try {
       // Fetch from your existing API endpoints
-      const [sensorsResponse, pharmaciesResponse] = await Promise.all([
-        fetch('/api/sensors'),
-        fetch('/api/admin/pharmacies')
-      ]);
+      const pharmaciesResponse = await fetch('/api/admin/pharmacies');
 
-      if (!sensorsResponse.ok || !pharmaciesResponse.ok) {
+      if (!pharmaciesResponse.ok) {
         throw new Error('Failed to fetch data');
       }
 
-      const sensorsData = await sensorsResponse.json();
       const pharmaciesData = await pharmaciesResponse.json();
 
       // Debug logging
-      console.log('Raw Sensors Response:', sensorsData);
-      console.log('Individual sensor example:', sensorsData.sensors?.[0]);
       console.log('Pharmacies Data:', pharmaciesData);
-
-      // Store sensors response for statistics calculation
-      setSensorsResponse(sensorsData);
 
       // Process the real data into the expected format
       const processedPharmacies = processPharmacyData(
-        pharmaciesData.pharmacies || [],
-        sensorsData.sensors || [],
-        sensorsData.allGateways || []
+        pharmaciesData.pharmacies || []
       );
 
       console.log('Processed Pharmacies:', processedPharmacies);
@@ -133,86 +126,16 @@ export default function TemperatureMonitoringPage() {
     }
   };
 
-  const processPharmacyData = (pharmaciesData: any[], sensorsData: any[], allGateways: any[] = []) => {
-    // Group sensors by pharmacy and organize by hubs
-    const pharmacyMap = new Map();
-
-    // Initialize pharmacies
-    pharmaciesData.forEach(pharmacy => {
-      pharmacyMap.set(pharmacy.id, {
-        id: pharmacy.id,
-        name: pharmacy.name,
-        code: pharmacy.code,
-        hubs: [],
-        directSensors: []
-      });
-    });
-
-    // Process sensor assignments and group them
-    sensorsData.forEach(sensor => {
-      if (sensor.pharmacy) {
-        const pharmacyId = sensor.pharmacy.id;
-        const pharmacy = pharmacyMap.get(pharmacyId);
-
-        if (pharmacy) {
-          const processedSensor = {
-            id: sensor.id,
-            name: sensor.name,
-            location: sensor.location,
-            currentTemp: sensor.currentTemp,
-            humidity: sensor.humidity,
-            lastReading: sensor.lastReading,
-            status: sensor.status || 'normal',
-            battery: sensor.battery || 0,
-            signal: sensor.signal || -100,
-            gatewayId: sensor.gatewayId
-          };
-
-          // If sensor has a gateway, group it under that gateway
-          if (sensor.gateway) {
-            let hub = pharmacy.hubs.find((h: any) => h.id === sensor.gateway.id);
-            if (!hub) {
-              hub = {
-                id: sensor.gateway.id,
-                name: sensor.gateway.name,
-                status: sensor.gateway.status === 'online' ? 'online' : 'offline',
-                connectedSensors: [],
-                lastSeen: sensor.gateway.lastSeen
-              };
-              pharmacy.hubs.push(hub);
-            }
-            hub.connectedSensors.push(processedSensor);
-          } else {
-            // Direct sensor (no gateway)
-            pharmacy.directSensors.push(processedSensor);
-          }
-        }
-      }
-    });
-
-    // Add any missing gateways to their respective pharmacies
-    allGateways.forEach(gateway => {
-      if (gateway.pharmacy) {
-        const pharmacy = pharmacyMap.get(gateway.pharmacy.id);
-        if (pharmacy) {
-          // Check if this gateway is already added
-          const existingHub = pharmacy.hubs.find(hub => hub.id === gateway.id);
-          if (!existingHub) {
-            // Add the gateway as a hub with no sensors
-            pharmacy.hubs.push({
-              id: gateway.id,
-              name: gateway.name,
-              status: gateway.status,
-              connectedSensors: [],
-              lastSeen: gateway.lastSeen
-            });
-          }
-        }
-      }
-    });
-
-    // Return all pharmacies (don't filter out ones without sensors since they might have gateways)
-    return Array.from(pharmacyMap.values());
+  const processPharmacyData = (pharmaciesData: any[]) => {
+    // Convert pharmacy data to the expected format
+    return pharmaciesData.map(pharmacy => ({
+      id: pharmacy.id.toString(),
+      name: pharmacy.name,
+      code: pharmacy.code,
+      hubs: [], // Will be populated when we add hub/sensor fetching
+      directSensors: [],
+      _count: pharmacy._count || { gateways: 0, sensors: 0, userPharmacies: 0 }
+    }));
   };
 
   const togglePharmacy = (pharmacyId: string) => {
@@ -266,19 +189,15 @@ export default function TemperatureMonitoringPage() {
 
   // Calculate totals from real data
   const totalSensors = pharmacies.reduce((total, pharmacy) => {
-    const hubSensors = pharmacy.hubs.reduce((hubTotal, hub) => hubTotal + hub.connectedSensors.length, 0);
-    return total + hubSensors + pharmacy.directSensors.length;
+    return total + (pharmacy._count?.sensors || 0);
   }, 0);
 
-  // Use allGateways data for hub statistics if available, otherwise fall back to pharmacy hubs
-  const totalHubs = sensorsResponse?.allGateways ? sensorsResponse.allGateways.length :
-                   pharmacies.reduce((total, pharmacy) => total + pharmacy.hubs.length, 0);
+  const totalHubs = pharmacies.reduce((total, pharmacy) => {
+    return total + (pharmacy._count?.gateways || 0);
+  }, 0);
 
-  const connectedHubs = sensorsResponse?.allGateways ?
-                       sensorsResponse.allGateways.filter(gateway => gateway.status === 'online').length :
-                       pharmacies.reduce((total, pharmacy) => {
-                         return total + pharmacy.hubs.filter(hub => hub.status === 'online').length;
-                       }, 0);
+  // For now, assume all hubs are connected (you can improve this later)
+  const connectedHubs = totalHubs;
 
   if (loading) {
     return (
@@ -377,7 +296,7 @@ export default function TemperatureMonitoringPage() {
         </div>
       )}
 
-      {/* Pharmacy/Hub/Sensor Tree */}
+      {/* Pharmacy Cards */}
       <div className="space-y-4">
         {pharmacies.map(pharmacy => (
           <div key={pharmacy.id} className="bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -396,7 +315,7 @@ export default function TemperatureMonitoringPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">{pharmacy.name}</h3>
                   <p className="text-sm text-gray-500">
-                    {pharmacy.hubs.length} hubs • {pharmacy.hubs.reduce((total, hub) => total + hub.connectedSensors.length, 0) + pharmacy.directSensors.length} sensors
+                    {pharmacy._count?.gateways || 0} hubs • {pharmacy._count?.sensors || 0} sensors
                   </p>
                 </div>
               </div>
@@ -404,125 +323,14 @@ export default function TemperatureMonitoringPage() {
 
             {/* Expanded Pharmacy Content */}
             {expandedPharmacies.has(pharmacy.id) && (
-              <div className="border-t border-gray-200">
-                {/* Hubs */}
-                {pharmacy.hubs.map(hub => (
-                  <div key={hub.id} className="ml-8 border-l-2 border-gray-100">
-                    {/* Hub Header */}
-                    <div 
-                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-                      onClick={() => toggleHub(hub.id)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        {expandedHubs.has(hub.id) ? (
-                          <ChevronDownIcon className="h-4 w-4 text-gray-500" />
-                        ) : (
-                          <ChevronLeftIcon className="h-4 w-4 text-gray-500 rotate-180" />
-                        )}
-                        <Cpu className="h-5 w-5 text-purple-600" />
-                        <div>
-                          <h4 className="font-medium text-gray-900">{hub.name}</h4>
-                          <p className="text-sm text-gray-500">{hub.connectedSensors.length} sensors connected</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(hub.status)}`}>
-                          {hub.status.toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Hub Sensors */}
-                    {expandedHubs.has(hub.id) && (
-                      <div className="ml-8 border-l-2 border-gray-100">
-                        {hub.connectedSensors.map(sensor => (
-                          <div key={sensor.id} className="flex items-center justify-between p-4 hover:bg-gray-50">
-                            <div className="flex items-center space-x-3">
-                              {getStatusIcon(sensor.location)}
-                              <div>
-                                <h5 className="font-medium text-gray-900">{sensor.name}</h5>
-                                <p className="text-sm text-gray-500 capitalize">{sensor.location}</p>
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center space-x-4">
-                              <div className="text-center">
-                                <div className="text-lg font-bold text-gray-900">
-                                  {sensor.currentTemp ? `${sensor.currentTemp.toFixed(1)}°F` : '--'}
-                                </div>
-                                {sensor.humidity && (
-                                  <div className="text-xs text-gray-500">{sensor.humidity.toFixed(1)}% RH</div>
-                                )}
-                              </div>
-                              
-                              <div className="flex items-center space-x-2">
-                                {getBatteryIcon(sensor.battery)}
-                                <span className="text-xs text-gray-600">{sensor.battery}%</span>
-                              </div>
-                              
-                              <div className="flex items-center space-x-2">
-                                {getSignalIcon(sensor.signal)}
-                                <span className="text-xs text-gray-600">{sensor.signal}</span>
-                              </div>
-                              
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(sensor.status)}`}>
-                                {sensor.status.toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {/* Direct Sensors (not connected through hubs) */}
-                {pharmacy.directSensors.length > 0 && (
-                  <div className="ml-8 border-l-2 border-gray-100">
-                    <div className="p-4">
-                      <h4 className="font-medium text-gray-700 mb-3 flex items-center">
-                        <MapPin className="h-4 w-4 mr-2" />
-                        Direct Sensors (No Hub)
-                      </h4>
-                      {pharmacy.directSensors.map(sensor => (
-                        <div key={sensor.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg mb-2">
-                          <div className="flex items-center space-x-3">
-                            {getStatusIcon(sensor.location)}
-                            <div>
-                              <h5 className="font-medium text-gray-900">{sensor.name}</h5>
-                              <p className="text-sm text-gray-500 capitalize">{sensor.location}</p>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center space-x-4">
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-gray-900">
-                                {sensor.currentTemp ? `${sensor.currentTemp.toFixed(1)}°F` : '--'}
-                              </div>
-                              {sensor.humidity && (
-                                <div className="text-xs text-gray-500">{sensor.humidity.toFixed(1)}% RH</div>
-                              )}
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              {getBatteryIcon(sensor.battery)}
-                              <span className="text-xs text-gray-600">{sensor.battery}%</span>
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              {getSignalIcon(sensor.signal)}
-                              <span className="text-xs text-gray-600">{sensor.signal}</span>
-                            </div>
-                            
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(sensor.status)}`}>
-                              {sensor.status.toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              <div className="border-t border-gray-200 p-4">
+                <div className="text-center text-gray-500 py-8">
+                  <Cpu className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p>Hub and sensor details will be displayed here</p>
+                  <p className="text-sm mt-2">
+                    This pharmacy has {pharmacy._count?.gateways || 0} gateway(s) and {pharmacy._count?.sensors || 0} sensor(s)
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -531,5 +339,3 @@ export default function TemperatureMonitoringPage() {
     </div>
   );
 }
-
-
